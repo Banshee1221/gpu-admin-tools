@@ -29,6 +29,7 @@ import os
 import mmap
 import struct
 from struct import Struct
+import json
 import time
 import sys
 import random
@@ -718,6 +719,9 @@ GPU_MAP = {
         "other_falcons": ["sec", "gsp"],
         "nvlink": {
             "number": 12,
+            "links_per_group": 4,
+            "base_offset": 0xa00000,
+            "per_group_offset": 0x40000,
         },
         "falcons_cfg": {
             "pmu": {
@@ -2375,6 +2379,31 @@ class NvidiaDevice(PciDevice, NvidiaDeviceInternal):
         self.nvlink_debug_nvldl_basic_state()
         if self.is_nvswitch():
             self.nvlink_debug_nport()
+            
+    def detect_nvlink(self):
+        from collections import Counter
+        self.wait_for_boot()
+        self._nvlink_query_enabled_links()
+        links = self.nvlink_get_links_in_hs()
+        #link_dl_states = Counter(self.nvlink_dl_get_link_states())
+        link_states = Counter(self.nvlink_get_link_states())
+        #tab = "\t"
+        output_mapping = {
+            "name": self.name,
+            "dev_path": self.dev_path,
+            "nvlink": {
+                "count": len(links),
+                "active": link_states['active']
+            }
+        }
+        #print(f"NVLinks:{tab}{len(links)}\nActive:{tab*2}{link_states['active']}")
+        print(json.dumps(output_mapping))
+        # self.nvlink_debug_minion_basic_state()
+        # self.nvlink_debug_nvlipt_lnk_basic_state()
+        # self.nvlink_debug_nvltlc_basic_state()
+        # self.nvlink_debug_nvldl_basic_state()
+        # if self.is_nvswitch():
+        #     self.nvlink_debug_nport()
 
 
 
@@ -4812,7 +4841,7 @@ def create_args():
     argp.add_option("--gpu-bdf", help="Select a single GPU by providing a substring of the BDF, e.g. '01:00'.")
     argp.add_option("--gpu-name", help="Select a single GPU by providing a substring of the GPU name, e.g. 'T4'. If multiple GPUs match, the first one will be used.")
     argp.add_option("--no-gpu", action='store_true', help="Do not use any of the GPUs; commands requiring one will not work.")
-    argp.add_option("--log", type="choice", choices=['debug', 'info', 'warning', 'error', 'critical'], default='info')
+    argp.add_option("--log", type="choice", choices=['debug', 'info', 'warning', 'error', 'critical'], default='error')
     argp.add_option("--mmio-access-type", type="choice", choices=['devmem', 'sysfs'], default='devmem',
                       help="On Linux, specify whether to do MMIO through /dev/mem or /sys/bus/pci/devices/.../resourceN")
 
@@ -4856,6 +4885,7 @@ reenumarate it in the OS by sysfs remove/rescan to restore BARs etc.""")
 
     argp.add_option("--debug-dump", action='store_true', default=False, help="Dump various state from the device for debug")
     argp.add_option("--nvlink-debug-dump", action="store_true", help="Dump NVLINK debug state.")
+    argp.add_option("--detect-nvlink", action="store_true", help="Determines whether NVLINK is present.")
     argp.add_option("--force-ecc-on-after-reset", action='store_true', default=False,
                     help="Force ECC to be enabled after a subsequent GPU reset")
     argp.add_option("--test-ecc-toggle", action='store_true', default=False,
@@ -4895,8 +4925,8 @@ def init():
     (opts, _) = argp.parse_args([])
 
 def main():
-    print(f"NVIDIA GPU Tools version {VERSION}")
-    print(f"Command line arguments: {sys.argv}")
+    #print(f"NVIDIA GPU Tools version {VERSION}")
+    #print(f"Command line arguments: {sys.argv}")
     sys.stdout.flush()
 
     global opts
@@ -4961,7 +4991,8 @@ def main():
 
 
     if gpu:
-        print_topo()
+        if not opts.detect_nvlink:
+            print_topo()
         info("Selected %s", gpu)
         if gpu.is_driver_loaded():
             if not opts.ignore_nvidia_driver:
@@ -5264,7 +5295,8 @@ def main():
 
 
 
-
+    if opts.detect_nvlink:
+        gpu.detect_nvlink()
 
     if opts.nvlink_debug_dump:
         gpu.nvlink_debug()
