@@ -1,0 +1,48 @@
+# This workflow will install Python dependencies, run tests and lint with a single version of Python
+# For more information see: https://docs.github.com/en/actions/automating-builds-and-tests/building-and-testing-python
+
+name: Python application
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+    - name: Set up Python 3.10
+      uses: actions/setup-python@v3
+      with:
+        python-version: "3.10"
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install pyinstaller
+        if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+
+    - name: Build with PyInstaller
+      run: pyinstaller --onefile nvidia_gpu_tools.py
+    
+    - name: Get short SHA and branch name
+      run: |
+        echo "sha_short=$(git rev-parse --short HEAD)" >> $GITHUB_ENV
+        echo "branch=${GITHUB_REF#refs/heads/}" >> $GITHUB_ENV
+    
+    - name: Create Release and Upload Asset
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: |
+        tag_name="${{ env.sha_short }}-${{ env.branch }}"
+        gh release create "$tag_name" \
+          --title "Release $tag_name" \
+          --notes "Automated release for commit ${{ env.sha_short }} on branch ${{ env.branch }}" \
+          ./dist/nvidia_gpu_tools
